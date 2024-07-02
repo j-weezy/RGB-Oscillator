@@ -10,27 +10,28 @@
 */
 
 #include "Oscillator.h"
+#include "Seg_Display.h"
+#include <Arduino.h> // Included to get Intellisense to work
 
 // Define pins on Arduino
-#define BLUE 3
-#define RED 5
-#define BUTTON_PIN 8
-#define BLUE2 6
-#define DATA_PIN 7 // DS [S1] on 74HC595
-#define RED2 9
-#define LATCH_PIN 10 // ST_CP [RCK] on 74HC595
-#define CLOCK_PIN 11 // SH_CP [SCK] on 74HC595
-#define PIN_A 13 // Connected to DT on KY-040
-#define PIN_B 12 // Connected to CLK on KY-040
+#define DATA_PIN 0 // DS [S1] on 74HC595
+#define CLOCK_PIN 2 // SH_CP [SCK] and ST_CP [RCK] on 74HC595
+#define BLUE 3 // PWM
+#define PIN_A 4 // Connected to DT on KY-040
+#define RED 5 // PWM
+#define BLUE2 6 // PWM
+#define DIG_1 7 // Leftmost digit on display
+#define DIG_2 8
+#define BUTTON_PIN 9
+#define PIN_B 10 // Connected to CLK on KY-040
+#define RED2 11 // PWM
+#define DIG_3 12
+#define DIG_4 13 // Rightmost digit on display
 
 // Initialize global variables
-
-int data_pin = 7;
-int latch_pin = 10;
-int clock_pin = 11;
-
 const float A_max = 255; // A
 
+// RGB values defined globally for persistence between loops
 int blue_value = 0;
 int red_value = 0;
 int blue2_value = 0;
@@ -40,25 +41,22 @@ int red2_value = 0;
 int A_val;
 int B_val;
 int button_toggle = 0;
-const int toggle_max = 4; // Set the maximum number of states
-
-byte leds = 0;
-byte red_led = 1;
-byte yellow_led = 2;
-byte green_led = 4;
+/*
+  0 -> None
+  1 -> Freq1
+  2 -> Freq2
+  3 -> Phi
+*/
+const int toggle_max = 4; // Set the number of states
 
 Oscillator oscillator1 = Oscillator(2); // y1 = sin(2*pi*(1/2)*t)
 Oscillator oscillator2 = Oscillator(2, 2); // y2 = sin(2*pi*(1/2)t + 2*(pi/12))
 
-bool first_loop = true;
+Seg_Display display = Seg_Display(CLOCK_PIN, DATA_PIN, DIG_1, DIG_2, DIG_3, DIG_4);
 
-// Function for implementation of Shift register 74HC595
-void update_shift_register()
-{
-   digitalWrite(latch_pin, LOW);
-   shiftOut(data_pin, clock_pin, LSBFIRST, leds);
-   digitalWrite(latch_pin, HIGH);
-}
+void setup();
+void loop();
+void handle_display();
 
 void setup() {
   // Pins for Oscillator RGB LEDs
@@ -72,33 +70,25 @@ void setup() {
   pinMode(PIN_B, INPUT);
   pinMode(BUTTON_PIN, INPUT);
   
-  // Pins for Shift Register
-  pinMode(latch_pin, OUTPUT);
-  pinMode(data_pin, OUTPUT);
-  pinMode(clock_pin, OUTPUT);
+  display.init();
+  display.display_off();
 
-  Serial.begin(9600);
+  // Try using Timer1
+  TCCR1A = 0; // Set Timer/Counter Control registers
+  TCCR1B = 0;
+  TCCR1B = 1;
+  TCNT1 = 0; // Set Timer/Counter 1 register
+  TIMSK1 |= (1 << TOIE1); // Set Timer Interrupt Mask register
+
+  sei();
 }
 
 void loop() {
-  if (first_loop) {
-    update_shift_register();
-    first_loop = false;
-  }
-
   // Handle button press
   if (digitalRead(BUTTON_PIN) == 0) {
     button_toggle += 1;
     button_toggle = button_toggle % toggle_max; // Ensure button_toggle < toggle_max
-    Serial.println(button_toggle);
-    
-    // Update shift register
-    if (button_toggle == 1) { leds = red_led; }
-    else if (button_toggle == 2) { leds = yellow_led; }
-    else if (button_toggle == 3) { leds = green_led; }
-    else { leds = 0; }
-    update_shift_register();
-    
+    // Delay for debounce
     delay(200);
   }  
   
@@ -118,32 +108,29 @@ void loop() {
 
     To avoid noise from the sensor, we will make sure to include a delay of at least 100ms.
   */
-  if (button_toggle == 1) {
+  if (button_toggle == 1) { // Oscillator1 period
     if (A_val == 0) {
       // Clockwise -> increment
       if (B_val == 1) { oscillator1.increment_period(); }
       else { oscillator1.decrement_period(); }
-
-      delay(100);
+      delay(100); // Debounce
     }
   }
-  else if (button_toggle == 2) {
+  else if (button_toggle == 2) { // Oscillator2 period
     if (A_val == 0) {
       // Clockwise -> increment
       if (B_val == 1) { oscillator2.increment_period(); }
       else { oscillator2.decrement_period(); }
-      
-      delay(100);
+      delay(100); // Debounce
     }
   }
-  else if (button_toggle == 3) {
+  else if (button_toggle == 3) { // Phi
     if (A_val == 0) {
-     if (B_val == 1) { oscillator2.increment_phi(); }
-     else { oscillator2.decrement_phi(); }
-      
-     oscillator1.reset_param();
-     oscillator2.reset_param();
-     delay(100);
+      if (B_val == 1) { oscillator2.increment_phi(); }
+      else { oscillator2.decrement_phi(); }
+      oscillator1.reset_param();
+      oscillator2.reset_param();
+      delay(100); // Debounce
     }
   }
 
@@ -170,8 +157,23 @@ void loop() {
   analogWrite(BLUE2, blue2_value);
   analogWrite(RED2, red2_value);
 
-  // 
   oscillator1.update();
   oscillator2.update();
   delay(Oscillator::delay_time);
+}
+
+void handle_display() {
+  if (button_toggle == 0) { 
+    display.display_off();
+    return;
+  }
+  else if (button_toggle == 1) { display.set_digits(oscillator1.get_period()); }
+  else if (button_toggle == 2) { display.set_digits(oscillator2.get_period()); }
+  else if (button_toggle == 3) { display.set_digits(oscillator2.get_phi()); }
+  display.display_off(); // turn off the display
+  display.set_display();
+}
+
+ISR(TIMER1_OVF_vect) { // Timer1 interrupt service routine (ISR)
+  handle_display();
 }

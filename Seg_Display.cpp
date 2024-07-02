@@ -8,6 +8,21 @@
     Digits are set by passing a number in [0, 100) to set_digits().
     Numbers can be type float or int and will be parsed and displayed as XX.XX
     Note that this means that digits beyond tens and hundredths will not be shown.
+
+    The digits of the segment display are made of 8 LEDs labeled A, B, C, D, E, F, G, DP and arranged like so:
+       A
+       _
+    F |_|  B
+    E |_|. C
+       D  DP
+    
+    We send data to the display as a byte whose binary representation determines the state of each LED in this order {DP, A, B, C, D, E, F, G}
+    For example 3 is represented as the byte 01111001
+                _
+    01111001 -> _|
+                _|
+    In the impementation, the digit images are defined in the get_byte_rep() function in hexadecimal.
+    
 */
 
 #include "Seg_Display.h"
@@ -69,7 +84,7 @@ void Seg_Display::set_digits(float raw) {
     display_digits[3] = get_byte_rep(hundredths);
     display_digits[2] = get_byte_rep(tenths);
     display_digits[1] = get_byte_rep(ones);
-    // Set decimal point on ones place
+    // Set decimal point on ones place by setting the leftmost bit
     display_digits[1] += 0x80;
     display_digits[0] = get_byte_rep(tens);    
 }
@@ -100,31 +115,22 @@ byte Seg_Display::get_byte_rep(uint8_t number) {
     switch (number) {
         case 0:
             return 0x7E;
-
         case 1: 
             return 0x30;
-
         case 2: 
             return 0x6D;
-
         case 3:
             return 0x79;
-
         case 4:
             return 0x33;
-
         case 5:
             return 0x5B;
-
         case 6:
             return 0x5F;
-        
         case 7:
             return 0x70;
-
         case 8:
             return 0x7F;
-
         case 9:
             return 0x7B;
     }

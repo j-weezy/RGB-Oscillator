@@ -1,12 +1,28 @@
 /*
-  sine_test.ino
+  RGB-Oscillator.ino
 
-  Test for using sin() built-in to build oscillator.
-  We would like to be able to adjust the parameters in the loop with input peripherals like buttons and/or knobs.
+  Meant to be a demonstration of oscillations modelled after Simple Harmonic Motion.
+  Uses a sine function to control two RGB LEDs so they oscillate between red and blue and bright and dim.
+  y(t) = A*sin(2*pi*f*t + h)
+  For example, one full period would be between two occurances of max brightness red.
+  To control the timing, the oscillator must be run in the loop with a single pre-determined delay() call: delay_time in the Oscillator class definition.
 
-  For this, we will use a rotary encoder.
-  Turning the encoder will increase and decrease the parameter.
-  Pressing the encoder will toggle between parameters.
+  The oscillators are interactive via incrementing their periods and the phase constant between them.
+
+  Interaction with the oscillators is done via a rotary encoder (KY-040).
+  Pressing the encoder will toggle between:
+    None
+    Oscillator1 Period
+    Oscillator2 Period
+    Phase constant
+  The parameters are then incremented by rotating the knob of the encoder.
+
+  A 7-Segment 4-Digit display is used to display the selected parameter.
+  This implementation uses a common cathode display driven by a SIPO shift register (74HC595).
+  The common pins for the digits are connected to ground via NPN transistors, whose base pins are driven by the digit pins on the arduino.
+
+  To handle continuously updating the display, the Timer1 overflow interrupt is used.
+  When Timer1 overflows, the display is updated via an ISR() function. This prevents the oscillators from being affected by updating the display.
 */
 
 #include "Oscillator.h"
@@ -22,7 +38,7 @@
 #define BLUE2 6 // PWM
 #define DIG_1 7 // Leftmost digit on display
 #define DIG_2 8
-#define BUTTON_PIN 9
+#define BUTTON_PIN 9 // Connected to SW on KY-040
 #define PIN_B 10 // Connected to CLK on KY-040
 #define RED2 11 // PWM
 #define DIG_3 12
@@ -73,10 +89,10 @@ void setup() {
   display.init();
   display.display_off();
 
-  // Try using Timer1
+  // Setup Timer1
   TCCR1A = 0; // Set Timer/Counter Control registers
   TCCR1B = 0;
-  TCCR1B = 1;
+  TCCR1B = 1; // Set prescaler
   TCNT1 = 0; // Set Timer/Counter 1 register
   TIMSK1 |= (1 << TOIE1); // Set Timer Interrupt Mask register
 

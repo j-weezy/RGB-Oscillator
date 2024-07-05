@@ -1,11 +1,14 @@
 /*
   RGB-Oscillator.ino
+  By Jason Wirth
+  Last updated 07/04/2024
 
   Meant to be a demonstration of oscillations modelled after Simple Harmonic Motion.
   Uses a sine function to control two RGB LEDs so they oscillate between red and blue and bright and dim.
   y(t) = A*sin(2*pi*f*t + h)
   For example, one full period would be between two occurances of max brightness red.
-  To control the timing, the oscillator must be run in the loop with a single pre-determined delay() call: delay_time in the Oscillator class definition.
+  To control the timing, the oscillator must be run in the loop with a single pre-defined delay() call: delay_time in the Oscillator class definition.
+  The default path should contain no additional calls to delay(), i.e. the time between successive loops should be precisely delay_time.
 
   The oscillators are interactive via incrementing their periods and the phase constant between them.
 
@@ -73,6 +76,7 @@ Seg_Display display = Seg_Display(CLOCK_PIN, DATA_PIN, DIG_1, DIG_2, DIG_3, DIG_
 void setup();
 void loop();
 void handle_display();
+void debounce(); // Call after handling rotary encoder input to prevent bounce-back
 
 void setup() {
   // Pins for Oscillator RGB LEDs
@@ -96,7 +100,7 @@ void setup() {
   TCNT1 = 0; // Set Timer/Counter 1 register
   TIMSK1 |= (1 << TOIE1); // Set Timer Interrupt Mask register
 
-  sei();
+  sei(); 
 }
 
 void loop() {
@@ -105,7 +109,7 @@ void loop() {
     button_toggle += 1;
     button_toggle = button_toggle % toggle_max; // Ensure button_toggle < toggle_max
     // Delay for debounce
-    delay(200);
+    debounce();
   }  
   
   // Handle rotary encoder
@@ -129,7 +133,7 @@ void loop() {
       // Clockwise -> increment
       if (B_val == 1) { oscillator1.increment_period(); }
       else { oscillator1.decrement_period(); }
-      delay(100); // Debounce
+      debounce(); // Debounce
     }
   }
   else if (button_toggle == 2) { // Oscillator2 period
@@ -137,7 +141,7 @@ void loop() {
       // Clockwise -> increment
       if (B_val == 1) { oscillator2.increment_period(); }
       else { oscillator2.decrement_period(); }
-      delay(100); // Debounce
+      debounce(); // Debounce
     }
   }
   else if (button_toggle == 3) { // Phi
@@ -146,7 +150,7 @@ void loop() {
       else { oscillator2.decrement_phi(); }
       oscillator1.reset_param();
       oscillator2.reset_param();
-      delay(100); // Debounce
+      debounce(); // Debounce
     }
   }
 
@@ -192,4 +196,9 @@ void handle_display() {
 
 ISR(TIMER1_OVF_vect) { // Timer1 interrupt service routine (ISR)
   handle_display();
+}
+
+void debounce() { 
+  // Wait some time after accepting signal from rotary encoder to prevent bounce back.
+  delay(200);
 }

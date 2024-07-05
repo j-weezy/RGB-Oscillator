@@ -1,5 +1,7 @@
 /*
     Seg_Display.h
+    By Jason Wirth
+    Last updated 07/04/2024
 
     Declaration of Seg_Display class for handling 7-Segment 4-Digit Display with shift register.
     Class will handle pushing display data to the register and needs access to number to be displayed and a toggle.

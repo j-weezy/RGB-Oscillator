@@ -1,5 +1,7 @@
 /*
     Oscillator.h
+    By Jason Wirth
+    Last updated 07/04/2024
 
     Declaration of class Oscillator for use with oscillation Arduino project.
     Can be interacted with by changing period and phase constant.
@@ -12,6 +14,7 @@ class Oscillator {
         float period; // T = 1/f
         float freq; // f
         static const float phi_base;
+        static const int phi_factor_max;
         int phi_factor;
         float phi; // phi = phi_base * phi_factor
         float oscillator_state;

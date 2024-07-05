@@ -22,7 +22,6 @@
     01111001 -> _|
                 _|
     In the impementation, the digit images are defined in the get_byte_rep() function in hexadecimal.
-    
 */
 
 #include "Seg_Display.h"

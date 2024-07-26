@@ -3,7 +3,7 @@
   By Jason Wirth
   Last updated 07/04/2024
 
-  Meant to be a demonstration of oscillations modelled after Simple Harmonic Motion.
+  Meant to be a demonstration of oscillations modeled after Simple Harmonic Motion.
   Uses a sine function to control two RGB LEDs so they oscillate between red and blue and bright and dim.
   y(t) = A*sin(2*pi*f*t + h)
   For example, one full period would be between two occurances of max brightness red.
@@ -36,12 +36,12 @@
 #define DATA_PIN 0 // DS [S1] on 74HC595
 #define CLOCK_PIN 2 // SH_CP [SCK] and ST_CP [RCK] on 74HC595
 #define BLUE 3 // PWM
-#define PIN_A 4 // Connected to DT on KY-040
+#define PIN_A 4 // Connected to DT on KY-040 (Interrupt Port D)
 #define RED 5 // PWM
 #define BLUE2 6 // PWM
 #define DIG_1 7 // Leftmost digit on display
 #define DIG_2 8
-#define BUTTON_PIN 9 // Connected to SW on KY-040
+#define BUTTON_PIN 9 // Connected to SW on KY-040 (Interrupt Port B)
 #define PIN_B 10 // Connected to CLK on KY-040
 #define RED2 11 // PWM
 #define DIG_3 12
@@ -76,6 +76,8 @@ Seg_Display display = Seg_Display(CLOCK_PIN, DATA_PIN, DIG_1, DIG_2, DIG_3, DIG_
 void setup();
 void loop();
 void handle_display();
+void handle_dial_turn();
+void handle_button_press();
 void debounce(); // Call after handling rotary encoder input to prevent bounce-back
 
 void setup() {
@@ -100,60 +102,21 @@ void setup() {
   TCNT1 = 0; // Set Timer/Counter 1 register
   TIMSK1 |= (1 << TOIE1); // Set Timer Interrupt Mask register
 
-  sei(); 
+  // Setup Pin-Change Interrupt
+  // Enable PCIE2 Bit3 (Port D)
+  PCICR |= B00000100;
+  // Select PCINT20 (Bit4) in Pin Change Mask 2 (PCMSK2) - Port D -> This is for Pin D4 (PIN_A)
+  PCMSK2 |= B00001000;
+
+  // Enable PCIE0 Bit0 (Port B)
+  PCICR |= B00000001;
+  // Select PCINT1 (Bit1) in Pin Change Mask 0 (PCMSK0) - Port B -> This is for Pin D9 (BUTTON_PIN)
+  PCMSK0 |= B00000010;
+
+  sei(); // Enable interrupts
 }
 
 void loop() {
-  // Handle button press
-  if (digitalRead(BUTTON_PIN) == 0) {
-    button_toggle += 1;
-    button_toggle = button_toggle % toggle_max; // Ensure button_toggle < toggle_max
-    // Delay for debounce
-    debounce();
-  }  
-  
-  // Handle rotary encoder
-  A_val = digitalRead(PIN_A);
-  B_val = digitalRead(PIN_B);
-
-  /*
-    The idle state of the pins is 1 (HIGH).
-    When A -> 0, the encoder is being rotated.
-    If B = 1, Pin B hasn't changed yet, and the encoder is rotating clockwise.
-    If B = 0, Pin B changed before Pin A, and the encoder is rotating counter-clockwise.
-
-    Note the conventions of CW and CCW are depended on which pins (CLK and DT) are called A and B.
-    So the directions are distinct, i.e. you can always tell if the encoder is being rotated in a different direction,
-      but the directions of CW and CCW may or may not be reversed.
-
-    To avoid noise from the sensor, we will make sure to include a delay of at least 100ms.
-  */
-  if (button_toggle == 1) { // Oscillator1 period
-    if (A_val == 0) {
-      // Clockwise -> increment
-      if (B_val == 1) { oscillator1.increment_period(); }
-      else { oscillator1.decrement_period(); }
-      debounce(); // Debounce
-    }
-  }
-  else if (button_toggle == 2) { // Oscillator2 period
-    if (A_val == 0) {
-      // Clockwise -> increment
-      if (B_val == 1) { oscillator2.increment_period(); }
-      else { oscillator2.decrement_period(); }
-      debounce(); // Debounce
-    }
-  }
-  else if (button_toggle == 3) { // Phi
-    if (A_val == 0) {
-      if (B_val == 1) { oscillator2.increment_phi(); }
-      else { oscillator2.decrement_phi(); }
-      oscillator1.reset_param();
-      oscillator2.reset_param();
-      debounce(); // Debounce
-    }
-  }
-
   // Set oscillator1
   float raw = A_max * oscillator1.state();
 
@@ -182,6 +145,54 @@ void loop() {
   delay(Oscillator::delay_time);
 }
 
+void handle_dial_turn() {
+  /*
+    Pin A has changed.
+
+    A = 0 -> encoder is being rotated.
+    If B = 1, Pin B hasn't changed yet, and the encoder is rotating clockwise.
+    If B = 0, Pin B changed before Pin A, and the encoder is rotating counter-clockwise.
+
+    Note the conventions of CW and CCW are depended on which pins (CLK and DT) are called A and B.
+    So the directions are distinct, i.e. you can always tell if the encoder is being rotated in a different direction,
+      but the directions of CW and CCW may or may not be reversed.
+  */
+  A_val = digitalRead(PIN_A);
+  B_val = digitalRead(PIN_B);
+
+  if (A_val == 0) {
+    if (B_val == 1) {
+      // Clockwise
+      // Check button_toggle and increment
+      if (button_toggle == 1) { oscillator1.increment_period(); }
+      else if (button_toggle == 2) { oscillator2.increment_period(); }
+      else if (button_toggle == 3) { oscillator2.increment_phi(); }
+    }
+    else if (B_val == 0) {
+      // Counter-clockwise
+      // Check button_toggle and decrement
+      if (button_toggle == 1) { oscillator1.decrement_period(); }
+      else if (button_toggle == 2) { oscillator2.decrement_period(); }
+      else if (button_toggle == 3) { oscillator2.decrement_phi(); }
+    }
+    debounce();
+    oscillator1.reset_param();
+    oscillator2.reset_param();
+  }
+}
+
+void handle_button_press() {
+  /*
+    Button pin has changed (changes twice per press).
+
+    Button Pin is HIGH when idle and LOW when depressed.
+  */
+  if (digitalRead(BUTTON_PIN) == 0) { // Button is depressed
+    button_toggle += 1;
+    button_toggle = button_toggle % toggle_max;
+  }
+}
+
 void handle_display() {
   if (button_toggle == 0) { 
     display.display_off();
@@ -196,6 +207,24 @@ void handle_display() {
 
 ISR(TIMER1_OVF_vect) { // Timer1 interrupt service routine (ISR)
   handle_display();
+}
+
+ISR(PCINT0_vect) {
+  /*
+    ISR for handling button press.
+    Button pin has changed (changes twice per press).
+
+    Button Pin is HIGH when idle and LOW when depressed.
+  */
+  handle_button_press();
+}
+
+ISR(PCINT2_vect) {
+  /*
+    ISR for handling rotation: Port D Interrupt.
+    Pin A has changed.
+  */
+  handle_dial_turn();
 }
 
 void debounce() { 
